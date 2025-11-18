@@ -1,40 +1,33 @@
-# Ideal Cities Maps
+# Ideal City masterplans
 
-A web application displaying 18 ideal cities from the Renaissance period, showing only buildings, green areas, and water bodies using OpenStreetMap data via the Overpass API.
+A web application displaying 15 ideal cities and masterplans from various historical periods, showing only buildings, green areas, and water bodies using OpenStreetMap data via the Overpass API.
 
 ## Features
 
-- **18 Ideal Cities**: Displays maps for historically significant planned cities
-- **Filtered Data**: Shows only buildings (brown), green areas (dark green), and water bodies (blue)
+- **15 Ideal City Masterplans**: Displays maps for historically significant planned cities
+- **Filtered Data**: Shows only buildings (brown outlines), green areas (dark green lines), and water bodies (blue lines)
 - **Dark Theme**: Uses OpenStreetMap dark style (CartoDB Dark Matter)
 - **Responsive Grid**: 3-column grid layout that adapts to different screen sizes
 - **Real-time Data**: Fetches data directly from OpenStreetMap via Overpass API
+- **Hover Descriptions**: Detailed information about each masterplan including architects, funders, time periods, and ruling dynasties
 
 ## Cities Included
 
-### Ideal Cities
-1. Palmanova
-2. Sabbioneta
-3. Zamość
-4. Terra del Sole
-5. Pienza
-6. Jülich
-7. Freudenstadt
-8. Alessandria (Cittadella)
-
-### Renaissance-like Star-Fort Ideal Cities
-9. Neuf-Brisach
-10. Bourtange
-11. Naarden
-12. Goryōkaku
-13. Almeida
-14. Elvas
-
-### Cities with Preserved Renaissance Planning Cores
-15. Ferrara (Addizione Erculea)
-16. Karlskrona
-17. Valletta
-18. Ljubljana
+1. **Palmanova** - Italy
+2. **Sabbioneta** - Italy
+3. **Zamość** - Poland
+4. **Nicosia** - Cyprus
+5. **Yerevan** - Armenia
+6. **Jülich** - Germany
+7. **Freudenstadt** - Germany
+8. **Kropyvnitsky** - Ukraine
+9. **Neuf-Brisach** - France
+10. **Bourtange** - Netherlands
+11. **Naarden** - Netherlands
+12. **Goryōkaku** - Japan
+13. **Almeida** - Portugal
+14. **Elvas** - Portugal
+15. **Beijing** - China
 
 ## Prerequisites
 
@@ -64,8 +57,10 @@ The application will be available at `http://localhost:3000`
 idealcities/
 ├── server.js          # Express server configuration
 ├── package.json       # Node.js dependencies and scripts
+├── vercel.json        # Vercel deployment configuration
 ├── public/            # Static files directory
-│   └── index.html     # Main HTML file with map visualization
+│   ├── index.html     # Main HTML file with map visualization
+│   └── cities-data.js # City data with coordinates and descriptions
 ├── .gitignore         # Git ignore file
 └── README.md          # This file
 ```
@@ -94,6 +89,34 @@ This application uses the public Overpass API endpoint:
 - `https://overpass-api.de/api/interpreter`
 
 Please be respectful of rate limits when making requests.
+
+## Deployment
+
+### Deploy to Vercel
+
+1. **Install Vercel CLI** (optional, for command-line deployment):
+```bash
+npm i -g vercel
+```
+
+2. **Deploy via Vercel Dashboard**:
+   - Go to [vercel.com](https://vercel.com)
+   - Sign in with your GitHub account
+   - Click "New Project"
+   - Import your GitHub repository: `RomanDataLab/idealcities`
+   - Vercel will automatically detect the Node.js project
+   - Click "Deploy"
+
+3. **Deploy via CLI**:
+```bash
+vercel
+```
+
+The application will be automatically deployed and you'll get a URL like `https://idealcities.vercel.app`
+
+### Environment Variables
+
+No environment variables are required for this application.
 
 ## License
 
