@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ideal Cities Maps</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #1a1a1a;
+            color: #fff;
+            padding: 20px;
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #fff;
+        }
+        
+        .maps-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            max-width: 1800px;
+            margin: 0 auto;
+        }
+        
+        .map-container {
+            position: relative;
+            height: 400px;
+            border: 2px solid #333;
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: #2a2a2a;
+        }
+        
+        /* Hide zoom controls */
+        .leaflet-control-zoom {
+            display: none !important;
+        }
+        
+        .leaflet-control-attribution {
+            background-color: rgba(42, 42, 42, 0.8) !important;
+            color: #aaa !important;
+            font-size: 10px !important;
+        }
+        
+        .map-container .map {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .map-label {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 12px;
+            z-index: 1000;
+            font-weight: bold;
+            cursor: help;
+        }
+        
+        .map-tooltip {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.95);
+            padding: 12px 15px;
+            border-radius: 6px;
+            font-size: 11px;
+            z-index: 1001;
+            max-width: 280px;
+            line-height: 1.5;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s;
+            border: 1px solid #555;
+            white-space: pre-line;
+        }
+        
+        .map-container:hover .map-tooltip {
+            opacity: 1;
+        }
+        
+        .map-container:hover .map-label {
+            opacity: 0;
+        }
+        
+        .loading {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #fff;
+            z-index: 1001;
+        }
+        
+        @media (max-width: 1200px) {
+            .maps-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .maps-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>Ideal City masterplans</h1>
+    <div class="maps-grid" id="mapsGrid"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="cities-data.js"></script>
+    <script>
+
+        // Function to create dark tile layer (CartoDB Dark Matter) - creates new instance for each map
+        function createDarkTileLayer() {
+            return L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                subdomains: 'abcd',
+                maxZoom: 19,
+                tileSize: 256,
+                zoomOffset: 0
+            });
+        }
+
+        // Overpass API endpoint
+        const overpassUrl = 'https://overpass-api.de/api/interpreter';
+
+        // Function to build Overpass query for buildings, green areas, and water bodies
+        function buildOverpassQuery(bbox, cityName) {
+            // Longer timeout for cities with large datasets
+            const timeout = (cityName === 'Yerevan' || cityName === 'Beijing') ? 90 : (cityName === 'Nicosia' || cityName === 'Naarden' ? 60 : 30);
+            return `
+[out:json][timeout:${timeout}];
+(
+  // Buildings
+  way["building"](${bbox});
+  relation["building"](${bbox});
+  
+  // Green areas
+  way["leisure"="park"](${bbox});
+  way["leisure"="garden"](${bbox});
+  way["landuse"="forest"](${bbox});
+  way["landuse"="meadow"](${bbox});
+  way["landuse"="grass"](${bbox});
+  way["landuse"="recreation_ground"](${bbox});
+  way["landuse"="village_green"](${bbox});
+  way["natural"="wood"](${bbox});
+  way["natural"="scrub"](${bbox});
+  way["natural"="grassland"](${bbox});
+  way["natural"="heath"](${bbox});
+  relation["leisure"="park"](${bbox});
+  relation["landuse"="forest"](${bbox});
+  relation["landuse"="meadow"](${bbox});
+  relation["landuse"="grass"](${bbox});
+  relation["natural"="wood"](${bbox});
+  
+  // Water bodies
+  way["natural"="water"](${bbox});
+  way["waterway"="river"](${bbox});
+  way["waterway"="stream"](${bbox});
+  way["waterway"="canal"](${bbox});
+  way["waterway"="ditch"](${bbox});
+  way["landuse"="basin"](${bbox});
+  way["landuse"="reservoir"](${bbox});
+  relation["natural"="water"](${bbox});
+  relation["waterway"](${bbox});
+);
+(._;>;);
+out geom;
+`;
+        }
+
+        // Function to fetch and display data for a city with retry logic
+        async function loadCityData(city, map, retries = 3) {
+            const [minLon, minLat, maxLon, maxLat] = city.bbox;
+            const bbox = `${minLat},${minLon},${maxLat},${maxLon}`;
+            // More retries for cities with large datasets
+            const maxRetries = (city.name === 'Nicosia' || city.name === 'Yerevan' || city.name === 'Naarden' || city.name === 'Beijing') ? 5 : retries;
+            const query = buildOverpassQuery(bbox, city.name);
+            
+            for (let attempt = 0; attempt < maxRetries; attempt++) {
+                try {
+                    // Wait longer between retries (exponential backoff)
+                    if (attempt > 0) {
+                        const waitTime = Math.min(5000 * Math.pow(2, attempt - 1), 30000); // Max 30 seconds
+                        await new Promise(resolve => setTimeout(resolve, waitTime));
+                    }
+                    
+                    const response = await fetch(overpassUrl, {
+                        method: 'POST',
+                        body: query,
+                        headers: {
+                            'Content-Type': 'text/plain'
+                        }
+                    });
+                    
+                    if (response.status === 429) {
+                        // Rate limited - wait longer before retry
+                        if (attempt < retries - 1) {
+                            const waitTime = Math.min(10000 * (attempt + 1), 60000); // Max 60 seconds
+                            await new Promise(resolve => setTimeout(resolve, waitTime));
+                            continue; // Retry
+                        }
+                        throw new Error(`HTTP error! status: ${response.status} - Rate limited`);
+                    }
+                    
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                
+                    const data = await response.json();
+                    
+                    if (data.error) {
+                        throw new Error(data.error);
+                    }
+                    
+                    // Process elements and add to map
+                    const processedWays = new Set();
+                    const allCoordinates = []; // Collect all coordinates to calculate bounds
+                    
+                    data.elements.forEach(element => {
+                        if (element.type === 'way' && element.geometry && !processedWays.has(element.id)) {
+                            processedWays.add(element.id);
+                            const coords = element.geometry.map(g => [g.lat, g.lon]);
+                            
+                            // Collect coordinates for bounds calculation
+                            coords.forEach(coord => allCoordinates.push(coord));
+                        
+                            // Determine color based on type
+                            let color = '#666';
+                            let fillColor = '#666';
+                            let fillOpacity = 0.6;
+                            let weight = 2;
+                            
+                            if (element.tags && element.tags.building) {
+                                color = '#8B7355';
+                                fillColor = '#8B7355';
+                                fillOpacity = 0; // Outline only
+                                weight = 1;
+                            } else if (element.tags && (
+                                 element.tags.leisure === 'park' || 
+                                 element.tags.leisure === 'garden' ||
+                                 element.tags.landuse === 'forest' || 
+                                 element.tags.landuse === 'meadow' || 
+                                 element.tags.landuse === 'grass' ||
+                                 element.tags.landuse === 'recreation_ground' ||
+                                 element.tags.natural === 'wood' ||
+                                 element.tags.natural === 'scrub' ||
+                                 element.tags.natural === 'grassland')) {
+                                color = '#2d5016';
+                                fillColor = '#2d5016';
+                                fillOpacity = 0; // Outline only
+                                weight = 1;
+                            } else if (element.tags && (
+                                 element.tags.natural === 'water' || 
+                                 element.tags.waterway ||
+                                 element.tags.landuse === 'basin' ||
+                                 element.tags.landuse === 'reservoir')) {
+                                color = '#1e3a8a';
+                                fillColor = '#1e3a8a';
+                                fillOpacity = 0; // Outline only
+                                weight = element.tags.waterway ? 2 : 1;
+                            } else {
+                                return; // Skip if not matching our criteria
+                            }
+                            
+                            // Check if it's a closed polygon
+                            const isClosed = coords.length > 2 && 
+                                           Math.abs(coords[0][0] - coords[coords.length - 1][0]) < 0.0001 && 
+                                           Math.abs(coords[0][1] - coords[coords.length - 1][1]) < 0.0001;
+                            
+                            // Buildings: draw as polygons, Green areas and Water bodies: draw as lines
+                            if (element.tags && element.tags.building && isClosed) {
+                                // Draw buildings as polygons
+                                L.polygon(coords, {
+                                    color: color,
+                                    fillColor: fillColor,
+                                    fillOpacity: fillOpacity,
+                                    weight: weight
+                                }).addTo(map);
+                            } else if (element.tags && (
+                                element.tags.leisure === 'park' || 
+                                element.tags.leisure === 'garden' ||
+                                element.tags.landuse === 'forest' || 
+                                element.tags.landuse === 'meadow' || 
+                                element.tags.landuse === 'grass' ||
+                                element.tags.landuse === 'recreation_ground' ||
+                                element.tags.natural === 'wood' ||
+                                element.tags.natural === 'scrub' ||
+                                element.tags.natural === 'grassland' ||
+                                element.tags.natural === 'water' || 
+                                element.tags.waterway ||
+                                element.tags.landuse === 'basin' ||
+                                element.tags.landuse === 'reservoir')) {
+                                // Draw green areas and water bodies as lines
+                                L.polyline(coords, {
+                                    color: color,
+                                    weight: weight,
+                                    opacity: 0.8
+                                }).addTo(map);
+                            }
+                        } else if (element.type === 'relation' && element.members && element.tags) {
+                            // Handle relations (multipolygons)
+                            const allCoords = [];
+                            
+                            element.members.forEach(member => {
+                                if (member.type === 'way' && member.geometry) {
+                                    const coords = member.geometry.map(g => [g.lat, g.lon]);
+                                    allCoords.push(coords);
+                                    // Collect coordinates for bounds calculation
+                                    coords.forEach(coord => allCoordinates.push(coord));
+                                }
+                            });
+                            
+                            if (allCoords.length > 0) {
+                                let color = '#666';
+                                let fillColor = '#666';
+                                let fillOpacity = 0; // Outline only
+                                
+                                if (element.tags.building) {
+                                    color = '#8B7355';
+                                    fillColor = '#8B7355';
+                                    fillOpacity = 0; // Outline only
+                                } else if (element.tags.leisure === 'park' || 
+                                         element.tags.landuse === 'forest' || 
+                                         element.tags.landuse === 'meadow' || 
+                                         element.tags.landuse === 'grass' ||
+                                         element.tags.natural === 'wood') {
+                                    color = '#2d5016';
+                                    fillColor = '#2d5016';
+                                    fillOpacity = 0; // Outline only
+                                } else if (element.tags.natural === 'water' || 
+                                         element.tags.waterway) {
+                                    color = '#1e3a8a';
+                                    fillColor = '#1e3a8a';
+                                    fillOpacity = 0; // Outline only
+                                } else {
+                                    return; // Skip if not matching our criteria
+                                }
+                                
+                                // Draw each polygon/line in the relation
+                                allCoords.forEach(coords => {
+                                    if (coords.length > 1) {
+                                        if (element.tags.building) {
+                                            // Draw buildings as polygons
+                                            L.polygon(coords, {
+                                                color: color,
+                                                fillColor: fillColor,
+                                                fillOpacity: fillOpacity,
+                                                weight: 1
+                                            }).addTo(map);
+                                        } else {
+                                            // Draw green areas and water bodies as lines
+                                            L.polyline(coords, {
+                                                color: color,
+                                                weight: 1,
+                                                opacity: 0.8
+                                            }).addTo(map);
+                                        }
+                                    }
+                                });
+                            }
+                        }
+                    });
+                    
+                    // Fit map to bounds of received polygons
+                    // Use specific zoom and center if city has zoom level defined
+                    if (city.zoom) {
+                        map.setView([city.lat, city.lon], city.zoom);
+                    } else if (allCoordinates.length > 0) {
+                        // Calculate bounds from all collected coordinates
+                        const bounds = L.latLngBounds(allCoordinates);
+                        // Add padding to show context around the polygons (20% expansion)
+                        const expandedBounds = bounds.pad(0.2);
+                        map.fitBounds(expandedBounds, { padding: [30, 30], maxZoom: 16 });
+                    } else if (data.elements.length > 0) {
+                        // Fallback: use city bbox if no coordinates collected
+                        const bounds = L.latLngBounds(city.bbox.slice(1, 3), city.bbox.slice(0, 2));
+                        const expandedBounds = bounds.pad(0.2);
+                        map.fitBounds(expandedBounds, { padding: [30, 30], maxZoom: 16 });
+                    } else {
+                        // No data: use city's zoom level if defined, otherwise default to 14
+                        const noDataZoom = city.zoom || 14;
+                        map.setView([city.lat, city.lon], noDataZoom);
+                    }
+                    
+                    // Success - break out of retry loop
+                    return;
+                    
+                } catch (error) {
+                    // If this is the last attempt, throw the error
+                    if (attempt === maxRetries - 1) {
+                        console.error(`Error loading data for ${city.name} after ${maxRetries} attempts:`, error);
+                        // Use city's zoom level if defined, otherwise default to 14
+                        const errorZoom = city.zoom || 14;
+                        map.setView([city.lat, city.lon], errorZoom);
+                        throw error; // Re-throw to be caught by initializeMaps
+                    }
+                    // Otherwise, continue to next retry attempt
+                }
+            }
+        }
+
+        // Initialize all maps with sequential loading to avoid rate limiting
+        async function initializeMaps() {
+            const grid = document.getElementById('mapsGrid');
+            
+            // Create all map containers first
+            const maps = [];
+            cities.forEach((city, index) => {
+                // Create map container
+                const container = document.createElement('div');
+                container.className = 'map-container';
+                container.id = `map-${index}`;
+                
+                const label = document.createElement('div');
+                label.className = 'map-label';
+                label.textContent = city.name;
+                container.appendChild(label);
+                
+                const tooltip = document.createElement('div');
+                tooltip.className = 'map-tooltip';
+                tooltip.textContent = city.description || '';
+                container.appendChild(tooltip);
+                
+                const loading = document.createElement('div');
+                loading.className = 'loading';
+                loading.id = `loading-${index}`;
+                loading.textContent = 'Waiting...';
+                container.appendChild(loading);
+                
+                grid.appendChild(container);
+                
+                // Initialize map without zoom controls
+                const map = L.map(`map-${index}`, {
+                    zoomControl: false,
+                    attributionControl: true,
+                    scrollWheelZoom: false,
+                    doubleClickZoom: false,
+                    boxZoom: false,
+                    keyboard: false,
+                    dragging: false
+                });
+                
+                // Create and add dark tile layer for this specific map
+                const darkTileLayer = createDarkTileLayer();
+                darkTileLayer.addTo(map);
+                
+                // Set initial view - use city's zoom level if defined, otherwise default to 14
+                const initialZoom = city.zoom || 14;
+                map.setView([city.lat, city.lon], initialZoom);
+                
+                maps.push({ city, map, loading, index });
+            });
+            
+            // Load maps sequentially with delay to avoid rate limiting
+            for (let i = 0; i < maps.length; i++) {
+                const { city, map, loading, index } = maps[i];
+                
+                // Longer delay before loading cities with large datasets
+                if (city.name === 'Yerevan' || city.name === 'Beijing') {
+                    loading.textContent = 'Waiting...';
+                    await new Promise(resolve => setTimeout(resolve, 10000));
+                } else if (city.name === 'Nicosia' || city.name === 'Naarden') {
+                    loading.textContent = 'Waiting...';
+                    await new Promise(resolve => setTimeout(resolve, 6000));
+                }
+                
+                loading.textContent = 'Loading...';
+                
+                try {
+                    await loadCityData(city, map);
+                    loading.style.display = 'none';
+                } catch (error) {
+                    console.error(`Error loading ${city.name}:`, error);
+                    loading.textContent = 'Error';
+                    loading.style.color = '#ff6b6b';
+                    // Still hide loading after showing error
+                    setTimeout(() => {
+                        loading.style.display = 'none';
+                    }, 3000);
+                }
+                
+                // Wait between requests to avoid rate limiting
+                // Longer delay after cities with large datasets
+                if (i < maps.length - 1) {
+                    const delay = (city.name === 'Yerevan' || city.name === 'Beijing') ? 10000 : (city.name === 'Nicosia' || city.name === 'Naarden' ? 6000 : 3000);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                }
+            }
+        }
+
+        // Initialize when page loads
+        window.addEventListener('DOMContentLoaded', initializeMaps);
+    </script>
+</body>
+</html>
+
