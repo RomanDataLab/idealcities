@@ -19,15 +19,15 @@
 ```
 idealcities/                             # Full workspace (pushed to GitHub)
 |
-|-- public/                              # >>> Static web app (served by Express) <<<
+|-- public/                              # >>> Static web app (deployed to Vercel) <<<
 |   |-- index.html                       # Main SPA (grid of interactive Leaflet maps)
 |   +-- cities-data.js                   # City definitions: coordinates, bbox, descriptions
 |
-|-- server.js                            # Express server (port 3000): static files
-|-- vercel.json                          # Vercel routing: all requests -> server.js (@vercel/node)
-|-- package.json                         # Node deps: express
+|-- vercel.json                          # Vercel static deploy: outputDirectory = public
 |-- README.md                            # Project overview and city list
 +-- graph.md                             # This file
+
+# Local only (gitignored): server.js, package.json (Express dev server on port 3000), *.mp4
 ```
 
 ---
@@ -45,9 +45,8 @@ idealcities/                             # Full workspace (pushed to GitHub)
 
 | Library | Version | Usage |
 |---------|---------|-------|
-| Express | ^4.18 | Local + Vercel server, static file serving |
 | Leaflet | v1.9.4 | Map rendering (CDN) |
-| CartoDB Dark Matter | - | Dark basemap tiles |
+| CartoDB Dark Matter | - | Dark basemap tiles (requires `?key=` param) |
 | Overpass API | - | OpenStreetMap data queries for buildings, parks, water |
 
 ---
@@ -58,23 +57,24 @@ idealcities/                             # Full workspace (pushed to GitHub)
 |-----|-------|-------|
 | GA4 `G-2E348VSQ5G` | Hardcoded in HTML head | Shared across all RDT projects |
 | GTM `GTM-538VHG6H` | Hardcoded in HTML head | Google Tag Manager container |
-| CARTO basemap tiles | None | `basemaps.cartocdn.com` is a public keyless CDN; verified HTTP 200 with no `api_key` param. No CARTO API key exists or is needed |
+| CARTO basemap `cb1_3n3g_1_7e65dbf86a711155a8049b57` | `?key=` param in tile URL, `public/index.html` | Free tier, 5M tile requests/month. Since Aug 2026 CARTO serves watermarked placeholder tiles without `key`. Source: `G:\My Drive\J_Projects_Archive\config\config_cartobasemap.json`. Param name is `key`, not `api_key` |
 
 ---
 
 ## Deploy Workflow
 
 ```bash
-# 1. Start local dev server
+# 1. Local dev (optional): Express server in server.js (gitignored, local only)
 npm start
 # -> http://localhost:3000
+# Or open public/index.html directly
 
-# 2. Commit and push (Vercel auto-deploys from GitHub)
+# 2. Commit and push (Vercel auto-deploys static from public/)
 git add -A
 git commit -m "description"
 git push origin main
 
-# Production: https://idealcities.vercel.app
+# Production: https://idealcities.vercel.app (static, no server)
 ```
 
 ---

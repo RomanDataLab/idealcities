@@ -33,3 +33,10 @@ build/
 
 # Session recordings
 1763462822994/
+
+# Media (local only)
+*.mp4
+
+# Local backend (dev server; production is static on Vercel)
+server.js
+package.json
