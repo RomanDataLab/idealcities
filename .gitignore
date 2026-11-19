@@ -27,3 +27,9 @@ Thumbs.db
 # Build outputs
 dist/
 build/
+
+# Local tool state
+.claude/
+
+# Session recordings
+1763462822994/
